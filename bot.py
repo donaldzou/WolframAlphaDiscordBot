@@ -6,7 +6,7 @@ import random
 from tinydb import TinyDB, Query
 import asyncio
 import time
-import tokens
+import t
 from datetime import date
 from datetime import time
 from datetime import datetime
@@ -17,7 +17,7 @@ from get_html import getxml
 import threading
 import fcntl, termios, struct
 import hashlib
-token_key = tokens.token_k
+token = t.token_k
 bot = commands.Bot(command_prefix='!')
 bot.remove_command('help')
 jobs = []
