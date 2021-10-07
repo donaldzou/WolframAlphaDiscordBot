@@ -25,16 +25,15 @@ def poc(question):
 		
 
 		params = list(filter(lambda x: len(x) > 1, list(map(lambda x: x.split("="), query.split("&"))))) # split string by & and = and remove empty strings
+		params.append(["podstate", "Show+all+steps"])
 		params.sort(key = lambda x: x[0]) # sort by the key
 
 		s = SIG_SALT
 		# Concatenate query together
+
 		for key, val in params:
-			a = val
-			if a == "Step-by-step+solution":
-				s += key + "Step-by-step%20solution"
-			else:
 				s += key + val
+
 		s = s.encode("utf-8")
 		return md5(s).hexdigest().upper()
 
@@ -54,7 +53,7 @@ def poc(question):
 		_query.update({"sig": calc_sig(query)}) # Calculate signature of all query before we set "sig" up.
 
 		final = f"{scheme}://{netloc}{path}?{urlencode(_query)}"
-		final = final.replace("Step-by-step+solution", "Step-by-step%20solution")
+		final = final.replace("Step-by-step", "Step-by-step&podstate=Show+all+steps")
 		print("Final+Sig: "+final)
 		return final
 
@@ -77,8 +76,7 @@ def poc(question):
 	data = basic_test(question)
 	return data
 	# basic_test("input=y%27+%3D+y%2F%28x%2By%5E3%29&podstate=Solution__Step-by-step+solution&format=plaintext&output=json")
-
-# print(poc("input=y%27%27%27%2B2y%27%27%2B2y%27%3D4x%2B5e%5E%28-x%29&podstate=Step-by-step&scantime=20.0&podstate=Step-by-step%20solution&format=image&ip=8.8.8.8&output=json"))
+print(poc("input=oxidation+states+of+chromium%28III%29+chloride&podstate=Step-by-step&scantime=20.0&&format=image&ip=8.8.8.8&output=json"))
 
 
 # print(("https:\/\/www5a.wolframalpha.com\/api\/v1\/recalc.jsp?id=MSPa143130ff5g79d90015600004gg4ci29f06bcf7d7360937098865079620&output=JSON"))

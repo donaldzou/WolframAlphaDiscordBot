@@ -1,22 +1,13 @@
 import os
 import discord
 from discord.ext import commands, tasks
-from discord.utils import get
-import random
-from tinydb import TinyDB, Query
-import asyncio
-import time
+from pyvirtualdisplay import Display
 import t
-from datetime import date
-from datetime import time
-from datetime import datetime
-from datetime import timedelta
-from PIL import Image
-from temporary import lookup
 from get_html import getxml
 import threading
-import fcntl, termios, struct
-import hashlib
+import pymongo
+import urllib.parse
+
 token = t.token_k
 bot = commands.Bot(command_prefix='!')
 bot.remove_command('help')
@@ -24,65 +15,76 @@ jobs = []
 finished_list = []
 current_jobs = []
 bot.request_count = 0
+client = pymongo.MongoClient(host="0.0.0.0", port=27017)
+db = client.wolfram_bot
+job_db = db.job
+finished_job_db = db.finished_job
 
-user_find = Query()
+display = Display(visible=0, size=(1920, 1080))
+display.start()
+
 @bot.event
 async def on_ready():
     looping.start()
     checking.start()
-    check_pushback.start()
     update_request.start()
     os.system('clear')
     print(f'{bot.user.name} has connected to Discord!')
 
-
 @bot.command(name='g')
 async def get(ctx, link):
-    accept = True
-    user_id = ctx.author.id
-    print(link)
-    if accept == True:
-        if 'https://www.wolframalpha.com/input/?i=' not in link:
-            await ctx.send(ctx.author.mention+', wrong format. Please try again.')
-        else:
-            link = link.replace('"','%22')
+    if ctx.message.channel.id == 665271879619051532:
+        if 'https://www.wolframalpha.com/input/?i=' in link:
+            link = link.replace('"', '%22')
             print(link)
             user = str(ctx.author)
-            user_id = ctx.author.id
-            await ctx.send("I'll DM you in a minute, if you don't get the answer, request again."+ctx.author.mention)
-            jobs.append([link,user,ctx.author.id])
-            print('done')
+            await ctx.send("I'll DM you right away ;) " + ctx.author.mention)
+            new_job = {
+                "link": link,
+                "user": user,
+                "user_id": ctx.author.id,
+                "status": "pending"
+            }
+            job_db.insert_one(new_job)
+        else:
+            await ctx.send(ctx.author.mention + ', wrong format. Please try again.')
+    else:
+        await ctx.send("Please send this question in " + bot.get_channel(
+            665271879619051532).mention + ". You can copy the following: \n`!g " + link + "`\n" + ctx.author.mention)
+        try: await ctx.message.delete()
+        except Exception:
+            pass
 
 @bot.command(name='q')
-async def q(ctx, link):
-    accept = True
-    user_id = ctx.author.id
-    print("QUESTION: "+link)
-    if accept == True:
-        link = link.split()
-        content = ''
-        for c in link:
-            for a in c:
-                if a.isdigit() or a.isalpha():
-                    content+=a
-                else:
-                    content+="%"+format(ord(a),"x").upper()
-            content+="+"
-        content = content.rstrip("+")
-        link = content
+async def q(ctx, *question):
+    link = ' '.join(question)
+    if ctx.message.channel.id == 665271879619051532:
+        print("QUESTION: "+link)
+        link = urllib.parse.quote_plus(link)
         user = str(ctx.author)
-        user_id = ctx.author.id
-        await ctx.send("I'll DM you in a minute, if you don't get the answer, request again."+ctx.author.mention)
-        jobs.append([link,user,ctx.author.id])
-        print('done')
+        await ctx.send("I'll DM you right away ;) " + ctx.author.mention)
+        new_job = {
+            "link": link,
+            "user": user,
+            "user_id": ctx.author.id,
+            "status": "pending"
+        }
+        job_db.insert_one(new_job)
+    else:
+        await ctx.send("Please send this question in "+bot.get_channel(665271879619051532).mention+
+                       ". You can copy the following: \n`!q "+link+"`\n"+ctx.author.mention)
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
 
-@bot.command(name = 'help')
+@bot.command(name='help')
 async def help(ctx):
-    await ctx.send("You can check #how-to-use-this."+ctx.author.mention)
-    await ctx.message.delete()
-    
-    
-
+    await ctx.send("You can check "+bot.get_channel(664271349237415936).mention+". "+ctx.author.mention)
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
 
 @get.error
 async def info_error(ctx, error):
@@ -96,46 +98,25 @@ async def end(ctx):
         await ctx.send(bot.user.name+' logged out!')
         await bot.logout()
 
-@tasks.loop(seconds=0.1)
-async def check_pushback():
-    pushback = open('job_repush.txt','r')
-    pushback_data = pushback.readlines()
-    if len(pushback_data) > 0:
-        for data in pushback_data:
-            data = data.strip('\n')
-            data = data.split('<repush>')
-            repush_link = data[0]
-            repush_username = data[1]
-            repush_id = int(data[2])
-            position = current_jobs.index(data[3])
-            current_jobs.pop(position)
-            jobs.append([repush_link,repush_username,repush_id])
-    pushback.close()
-    pushback = open('job_repush.txt','w')
-    pushback.close()
     
-@tasks.loop(seconds = 0.1)
+@tasks.loop(seconds = 0.5)
 async def looping():
-    now = datetime.now()
-    if jobs.__len__()>0:
-        user_id = jobs[0][2]        
-        link = jobs[0][0]
-        user_name = jobs[0][1]
-        job_id_text = str(jobs[0])+str(datetime.now())
-        job_id = hashlib.sha256(job_id_text.encode())
-        job_id = job_id.hexdigest()
-        print('-'*100)
-        print('[Bot] |Recieved Fetching Jobs|')
-        print('[Bot] |Job ID:',job_id,'|')
-        print('[Bot] |User Id:',user_id,'|')
-        print('[Bot] |User Name:',user_name,'|')
-        print('[Bot] |Fetch Link:',link,'|')
-        print('-'*100)
-        current_jobs.append(job_id)
-        print('Amount of Jobs: ',len(current_jobs))
-        status = threading.Thread(target=getxml,args=(link,user_name,user_id,job_id))
-        status.start()
-        jobs.pop(0)
+    if job_db.count_documents({"status": "pending"}) > 0:
+        pending_job = job_db.find({"status": "pending"})
+        for i in pending_job:
+            job_db.update_one({"_id": i['_id']}, {"$set": {"status": "fetching"}})
+            user_id = i['user_id']
+            link = i['link']
+            user_name = i['user']
+            print('-' * 100)
+            print('[Bot] |Recieved Fetching Jobs|')
+            print('[Bot] |Job ID:', i['_id'], '|')
+            print('[Bot] |User Id:', user_id, '|')
+            print('[Bot] |User Name:', user_name, '|')
+            print('[Bot] |Fetch Link:', link, '|')
+            print('-' * 100)
+            status = threading.Thread(target=getxml, args=(link, user_name, user_id, i['_id'], client))
+            status.start()
 
 @tasks.loop(seconds = 900)
 async def update_request():
@@ -162,70 +143,29 @@ async def update_request():
 
 
 
-@tasks.loop(seconds = 0.1)
+@tasks.loop(seconds = 0.5)
 async def checking():
-    job = open('job.txt','r')
-    jobs = job.readlines()
-    job_status = open('job_status.txt','r')
-    status = job_status.readline()
-    status = status.strip('\n')
-    if status == 'not writing':
-        if len(jobs) > 0:
-            job_status.close()
-            job_status = open('job_status.txt','w')
-            job_status.write('bot writing')
-            job_status.close()
-            for a in jobs:
-                a = a.strip('\n')
-                a = a.strip('][').split(', ')
-                a[1] = int(a[1])
-                a[0] = a[0].strip("'")
-                file_name = a[0]
-                job_id = a[0]
-                job_id = job_id.replace('result.png','')
-                job_id = job_id.replace('result.html','')
-                job_id = job_id.replace('_no_step_by_step.png','')
-                print('[Bot] |Job ID|', job_id)
-                account = int(a[1])
-                print('-'*100)
-                print('[Bot] |Recieved Sending Job|',account,','+file_name)
-                
-                user = bot.get_user(account)
-                print(user)
-                if '_no_step_by_step.png' in file_name:
-                    await user.send(a[2]+' - This link does not have step-by-step solution, please try again.')
-                    position = current_jobs.index(job_id)
-                    current_jobs.pop(position)
-                else:
-                    await user.send('Here is the results ;)')
-                    # await user.send(file=discord.File(file_name))
-                    print(file_name)
-                    if 'result.html' in file_name:
-                        jpg_name = file_name.replace('result.html','result.jpg')
-                        await user.send(file=discord.File(jpg_name))
-                        bot.request_count += 1
-                        try:
-                            os.remove(jpg_name)
-                        except FileNotFoundError:
-                            pass
-                    try:
-                        os.remove(a[0])
-                    except FileNotFoundError:
-                        pass
-                    position = current_jobs.index(job_id)
-                    print(job_id,position)
-                    current_jobs.pop(position)
-                print('-'*100)
-                print('[Bot] |Finshed Sending Job|',account,','+a[0])
-                print('Amount of Jobs: ',len(current_jobs))
-                ('-'*100)
-            job.close()
-            job = open('job.txt','w')
-            job.close()
-            job = open('job_status.txt','w')
-            job.write('not writing')
-            job.close()
-    else:
-        pass
+    finished_job = job_db.find({
+        "$or": [{"status": "yes_result"}, {"status": "no_result"}]
+    })
+    for i in finished_job:
+        print('[Bot] |Job ID|', str(i['_id']))
+        account = i['user_id']
+        print('-' * 100)
+        print('[Bot] [ID: '+str(i['_id'])+'] |Received Sending Job| Receiver: ', account)
+        user = await bot.fetch_user(account)
+        if i['status'] == "no_result":
+            await user.send('`' + i['link'] + '` - This question does not have step-by-step solution, please try again.')
+        else:
+            await user.send('**Here are the results ;) **')
+            jpg_name = str(i['_id'])+'result.jpg'
+            await user.send(file=discord.File(jpg_name))
+            bot.request_count += 1
+            try:
+                os.remove(jpg_name)
+            except FileNotFoundError:
+                pass
+        job_db.update_one({"_id": i['_id']}, {"$set": {"status": "sent"}})
+        print('[Bot] [ID: '+str(i['_id'])+'] |Finshed Sending Job|', account)
 
 bot.run(token)
